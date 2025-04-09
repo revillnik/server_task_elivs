@@ -76,10 +76,25 @@ def get_achievement(achievement_pk):
 
 
 # маршрут для отображения всех пользователей
-@app.route("/all_users")
+@app.route("/all_users", methods=["get", "post"])
 def get_all_users():
-    all_users_data = db.session.query(User).all()
-    return all_users_schema.dump(all_users_data)
+    if request.method == "GET":
+        all_users_data = db.session.query(User).all()
+        return all_users_schema.dump(all_users_data)
+    elif request.method == "POST":
+        data_for_create_user = request.get_json()
+        try:
+            new_user = User(
+                id=data_for_create_user.get("id"),
+                username=data_for_create_user.get("username"),
+                language=data_for_create_user.get("language"),
+                user_achievements=data_for_create_user.get("user_achievements", list()),
+            )
+            db.session.add(new_user)
+            db.session.commit()
+            return f"user - {data_for_create_user.get("username")} был создан!"
+        except:
+            return "Создать пользователя с такими данными невозможно"
 
 
 # маршрут для отображения конкретных пользователей по pk
@@ -160,20 +175,38 @@ def get_statistic_information():
     )
 
     # пользователи с максимальной разностью
-    user_differense_top = query_for_user_statistic[0]
-    user_differense_bottom = (
-        query_for_user_statistic[-1]
-        if len(query_for_user_statistic) > 1
-        else "database have one user"
-    )
+
+    max_dif = [
+        query_for_user_statistic[0][0].username,
+        (
+            query_for_user_statistic[-1][0].username
+            if len(query_for_user_statistic) > 1
+            else "database have one user"
+        ),
+    ]
 
     # пользователи с минимальной разностью
 
-    user_differense_closely_top = (
-        query_for_user_statistic[1]
-        if len(query_for_user_statistic) > 1
-        else "database have one user"
-    )
+    if len(query_for_user_statistic) > 1:
+        for i in range(0, len(query_for_user_statistic) - 1):
+            if i == 0:
+                min_dif = (
+                    query_for_user_statistic[i][1] - query_for_user_statistic[i + 1][1],
+                    query_for_user_statistic[i],
+                    query_for_user_statistic[i + 1],
+                )
+            else:
+                next_min_dif = (
+                    query_for_user_statistic[i][1] - query_for_user_statistic[i + 1][1],
+                    query_for_user_statistic[i],
+                    query_for_user_statistic[i + 1],
+                )
+                if min_dif[0] >= next_min_dif[0]:
+                    min_dif = next_min_dif
+        else:
+            min_dif = list(map(lambda x: x[0].username, min_dif[1::]))
+    else:
+        min_dif = [query_for_user_statistic[0].username, "database have one user"]
 
     # пользователи, которые получали достижения 7 дней подряд
 
@@ -204,15 +237,9 @@ def get_statistic_information():
     return json.dumps(
         {
             "users_with_max_count_achievements": users_with_max_count_achievements,
-            "user_max_score": user_differense_top[0].username,
-            "users_max_differense_score": [
-                user_differense_top[0].username,
-                user_differense_bottom[0].username,
-            ],
-            "users_min_differense_score": [
-                user_differense_top[0].username,
-                user_differense_closely_top[0].username,
-            ],
+            "user_max_score": max_dif[0],
+            "users_max_differense_score": max_dif,
+            "users_min_differense_score": min_dif,
             "users_with_achievements_every_day_of_week": users_with_achievements_every_day_of_week,
         },
         ensure_ascii=False,
